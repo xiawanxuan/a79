@@ -324,3 +324,351 @@ class ReportGenerator:
             conclusions.append("数据分析结果待进一步解读。")
 
         return conclusions
+
+    def generate_cross_region_report(self,
+                                    comparison_results: Dict,
+                                    figure_paths: Dict[str, Dict[str, str]],
+                                    group_id: Optional[str] = None,
+                                    filename: Optional[str] = None) -> str:
+        """
+        生成跨区域泥炭钻孔对比分析Word报告
+
+        Args:
+            comparison_results: 对比分析结果字典
+            figure_paths: 图表文件路径字典
+            group_id: 对比组ID
+            filename: 输出文件名（不含扩展名）
+
+        Returns:
+            报告文件完整路径
+        """
+        try:
+            from docx import Document
+            from docx.shared import Pt, Inches, Cm, RGBColor
+            from docx.enum.text import WD_ALIGN_PARAGRAPH
+        except ImportError:
+            raise ImportError("请安装python-docx库以生成Word报告：pip install python-docx")
+
+        if group_id is None:
+            group_id = "cross_region_comparison"
+        if filename is None:
+            filename = f"{group_id}_comparison_report"
+
+        doc = Document()
+        self._set_default_font(doc)
+
+        title = doc.add_heading("", level=0)
+        title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        run = title.add_run("中国湿地泥炭钻孔古环境跨区域对比研究报告")
+        run.font.size = Pt(22)
+        run.font.bold = True
+        run.font.color.rgb = RGBColor(0x2C, 0x3E, 0x50)
+
+        subtitle = doc.add_paragraph()
+        subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        sr = subtitle.add_run("Cross-Region Paleoenvironmental Comparison of Peat Cores")
+        sr.font.size = Pt(12)
+        sr.italic = True
+        sr.font.color.rgb = RGBColor(0x7F, 0x8C, 0x8D)
+
+        self._add_report_header(doc)
+        self._add_summary_table_cross(doc, comparison_results)
+
+        group_config = comparison_results.get("comparison_group", {})
+        self._add_report_section(
+            doc, "1 研究区概况与对比组设置",
+            [
+                f"本次对比研究采用对比组「{group_config.get('name', group_id)}」，"
+                f"共纳入 {len(comparison_results.get('core_timeseries', {}))} 个湿地泥炭钻孔，"
+                f"覆盖多个地理气候分区。{group_config.get('description', '')}",
+                "钻孔位置、区域分布和海拔高程详见下表。"
+            ]
+        )
+        self._add_core_metadata_table(doc, comparison_results.get("core_metadata"))
+
+        self._add_report_section(
+            doc, "2 多钻孔时序联动对比",
+            [
+                "将各钻孔古环境指标统一校准至相同时间网格（10年分辨率）后，"
+                "开展多区域时序联动对比。下图分别展示湿度指数、温度距平和碳同位素的跨区域时空演化。"
+            ]
+        )
+
+        ts_fig_keys = ["timeseries_comparison_humidity", "timeseries_comparison_temperature",
+                      "timeseries_comparison_delta13C"]
+        ts_captions = [
+            "图2-1 多区域湿地钻孔湿度指数万年波动对比",
+            "图2-2 多区域湿地钻孔温度距平万年波动对比",
+            "图2-3 多区域湿地钻孔有机碳δ¹³C同位素演化对比"
+        ]
+        for fk, cap in zip(ts_fig_keys, ts_captions):
+            if fk in figure_paths and "png" in figure_paths[fk]:
+                self._add_figure_with_caption(doc, figure_paths[fk]["png"], cap)
+
+        self._add_report_section(
+            doc, "3 分时段古环境统计对比",
+            [
+                "按考古气候地层单位（全新世早-中-晚期、末次冰消期）对各钻孔的古环境指标"
+                "进行分段统计。区域-时段热力图直观展现不同区域的古环境梯度。"
+            ]
+        )
+
+        self._add_period_summary_table(doc, comparison_results.get("period_statistics"))
+
+        heatmap_keys = ["region_period_heatmap_humidity", "region_period_heatmap_temperature"]
+        heatmap_captions = [
+            "图3-1 各区域钻孔分时段湿度指数均值热力图",
+            "图3-2 各区域钻孔分时段温度距平热力图"
+        ]
+        for fk, cap in zip(heatmap_keys, heatmap_captions):
+            if fk in figure_paths and "png" in figure_paths[fk]:
+                self._add_figure_with_caption(doc, figure_paths[fk]["png"], cap)
+
+        self._add_report_section(
+            doc, "4 钻孔间古环境差异与区域聚类",
+            [
+                "基于各时段古环境指标的欧氏距离构建钻孔间差异矩阵，"
+                "采用层次聚类（UPGMA）方法识别区域古环境相似性分组。"
+            ]
+        )
+
+        diff_keys = ["diff_heatmap_combined", "diff_heatmap_humidity_mean", "diff_heatmap_temperature_mean"]
+        diff_captions = [
+            "图4-1 多钻孔综合古环境差异热力图（加权欧氏距离）",
+            "图4-2 多钻孔湿度指数差异热力图",
+            "图4-3 多钻孔温度距平差异热力图"
+        ]
+        for fk, cap in zip(diff_keys, diff_captions):
+            if fk in figure_paths and "png" in figure_paths[fk]:
+                self._add_figure_with_caption(doc, figure_paths[fk]["png"], cap)
+
+        clusters = comparison_results.get("clusters")
+        if clusters is not None and len(clusters) > 0:
+            p = doc.add_paragraph()
+            run = p.add_run("表4-1 区域古环境聚类分组结果")
+            run.bold = True
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            self._add_dataframe_table(doc, clusters[["core_id", "location", "region", "cluster"]])
+
+        self._add_report_section(
+            doc, "5 空间相关性分析",
+            [
+                "对不同时间节点的钻孔指标与海拔、纬度等空间因子进行皮尔逊相关分析，"
+                "探索古环境梯度的空间驱动机制。"
+            ]
+        )
+
+        spatial_corr = comparison_results.get("spatial_correlation")
+        if spatial_corr is not None and len(spatial_corr) > 0:
+            self._add_spatial_correlation_summary(doc, spatial_corr)
+            if "spatial_correlation" in figure_paths and "png" in figure_paths["spatial_correlation"]:
+                self._add_figure_with_caption(
+                    doc, figure_paths["spatial_correlation"]["png"],
+                    "图5-1 湿度指数与海拔/纬度空间相关性演变"
+                )
+
+        self._add_report_section(
+            doc, "6 跨区域对比结论",
+            self._generate_cross_region_conclusions(comparison_results)
+        )
+
+        output_path = self.config.get_report_path(f"{filename}.docx")
+        doc.save(output_path)
+        return output_path
+
+    def _add_summary_table_cross(self, doc, comparison_results: Dict) -> None:
+        """添加跨区域对比摘要表"""
+        p = doc.add_paragraph()
+        run = p.add_run("摘要")
+        run.bold = True
+        run.font.size = Pt(14)
+
+        cores = comparison_results.get("core_timeseries", {})
+        aligned = comparison_results.get("aligned_data")
+        period_stats = comparison_results.get("period_statistics")
+
+        summary_text = (
+            f"本次研究共对比分析 {len(cores)} 个湿地泥炭钻孔的多指标古环境记录，"
+        )
+        if aligned is not None:
+            age_min = aligned["age_yrBP"].min()
+            age_max = aligned["age_yrBP"].max()
+            summary_text += (
+                f"覆盖年代范围 {age_min:.0f}–{age_max:.0f} yr BP，"
+                f"以 10 年统一分辨率对齐，总计 {len(aligned)} 组观测数据。"
+            )
+        if period_stats is not None:
+            n_periods = period_stats["period_label"].nunique()
+            summary_text += f"按 {n_periods} 个考古气候时段进行统计对比分析。"
+
+        doc.add_paragraph(summary_text)
+
+    def _add_core_metadata_table(self, doc, meta_df: Optional[pd.DataFrame]) -> None:
+        """添加钻孔元数据表"""
+        if meta_df is None:
+            doc.add_paragraph("（钻孔元数据暂缺）")
+            return
+
+        p = doc.add_paragraph()
+        run = p.add_run("表1-1 研究钻孔基本信息")
+        run.bold = True
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+        display_cols = [c for c in ["core_id", "location", "region",
+                                    "latitude", "longitude", "elevation_m", "description"]
+                       if c in meta_df.columns]
+        self._add_dataframe_table(doc, meta_df[display_cols])
+
+    def _add_period_summary_table(self, doc, period_stats: Optional[pd.DataFrame]) -> None:
+        """添加时段统计摘要表"""
+        if period_stats is None or len(period_stats) == 0:
+            doc.add_paragraph("（分时段统计数据暂缺）")
+            return
+
+        p = doc.add_paragraph()
+        run = p.add_run("表3-1 各钻孔分时段古环境指标统计摘要")
+        run.bold = True
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+        cols = ["core_id", "location", "period_label", "sample_count"]
+        for proxy in ["humidity", "temperature", "delta13C"]:
+            if f"{proxy}_mean" in period_stats.columns:
+                cols.extend([f"{proxy}_mean", f"{proxy}_std", f"{proxy}_trend"])
+
+        avail_cols = [c for c in cols if c in period_stats.columns]
+        region_col = "region" if "region" in period_stats.columns else None
+        if region_col and region_col not in avail_cols:
+            avail_cols.insert(2, region_col)
+        display_df = period_stats[avail_cols].head(30)
+        self._add_dataframe_table(doc, display_df)
+
+        if len(period_stats) > 30:
+            note = doc.add_paragraph()
+            nr = note.add_run(f"（注：仅展示前30行，完整统计共 {len(period_stats)} 条记录）")
+            nr.italic = True
+            nr.font.size = Pt(9)
+
+    def _add_spatial_correlation_summary(self, doc, spatial_corr: pd.DataFrame) -> None:
+        """添加空间相关性摘要"""
+        p = doc.add_paragraph()
+        run = p.add_run("表5-1 不同时段湿度空间相关性统计")
+        run.bold = True
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+        summary = spatial_corr.groupby("spatial_variable").agg(
+            sample_count=("pearson_r", "count"),
+            mean_r=("pearson_r", "mean"),
+            max_r=("pearson_r", "max"),
+            min_r=("pearson_r", "min"),
+            significant_count=("p_value", lambda x: (x < 0.05).sum())
+        ).reset_index()
+
+        var_display = {
+            "elevation_m": "海拔 (m)",
+            "latitude": "纬度 (°N)",
+            "longitude": "经度 (°E)"
+        }
+        summary["空间因子"] = summary["spatial_variable"].map(var_display).fillna(summary["spatial_variable"])
+        display = summary[["空间因子", "sample_count", "mean_r", "max_r", "min_r", "significant_count"]]
+        display.columns = ["空间因子", "统计时段数", "平均r", "最大r", "最小r", "显著(p<0.05)时段数"]
+        display = display.round(3)
+        self._add_dataframe_table(doc, display)
+
+    def _generate_cross_region_conclusions(self, comparison_results: Dict) -> List[str]:
+        """生成跨区域对比自动结论"""
+        conclusions = []
+
+        cores = comparison_results.get("core_timeseries", {})
+        n_cores = len(cores)
+        if n_cores >= 2:
+            conclusions.append(
+                f"本研究通过{n_cores}个跨区域泥炭钻孔的多指标对比分析，"
+                f"揭示了不同地理单元湿地古环境演化的共性规律与区域差异性。"
+            )
+
+        diff_combined = comparison_results.get("difference_matrices", {}).get("combined")
+        if diff_combined is not None and len(diff_combined) >= 3:
+            values = diff_combined.values.copy()
+            np.fill_diagonal(values, np.nan)
+            if np.any(~np.isnan(values)):
+                avg_diff = np.nanmean(values)
+                max_diff = np.nanmax(values)
+                max_pos = np.unravel_index(np.nanargmax(values), values.shape)
+                most_diff_pair = f"{diff_combined.index[max_pos[0]]} vs {diff_combined.columns[max_pos[1]]}"
+                conclusions.append(
+                    f"综合古环境差异分析表明，钻孔间平均欧氏距离为{avg_diff:.3f}，"
+                    f"其中差异最大的钻孔对为「{most_diff_pair}」(距离={max_diff:.3f})，"
+                    f"反映显著的区域古环境梯度。"
+                )
+
+        period_stats = comparison_results.get("period_statistics")
+        if period_stats is not None and len(period_stats) > 0:
+            if "humidity_mean" in period_stats.columns and "region" in period_stats.columns:
+                region_means = period_stats.groupby("region")["humidity_mean"].mean().sort_values(ascending=False)
+                if len(region_means) >= 2:
+                    wettest = region_means.index[0]
+                    driest = region_means.index[-1]
+                    conclusions.append(
+                        f"区域湿度对比显示「{wettest}」区域整体湿度最高（均值={region_means.iloc[0]:.2f}），"
+                        f"而「{driest}」区域最为干燥（均值={region_means.iloc[-1]:.2f}），"
+                        f"与现代气候格局基本吻合。"
+                    )
+
+        clusters = comparison_results.get("clusters")
+        if clusters is not None and len(clusters) > 0:
+            n_clusters = clusters["cluster"].nunique()
+            conclusions.append(
+                f"层次聚类将{n_cores}个钻孔划分为{n_clusters}个古环境相似组，"
+                f"组内钻孔在湿度、温度演化上表现出同步性特征。"
+            )
+
+        spatial_corr = comparison_results.get("spatial_correlation")
+        if spatial_corr is not None and len(spatial_corr) > 0:
+            sig = spatial_corr[spatial_corr["p_value"] < 0.05]
+            if len(sig) > 0:
+                top_sig = sig.loc[sig["pearson_r"].abs().idxmax()]
+                var_disp = {"elevation_m": "海拔", "latitude": "纬度", "longitude": "经度"}
+                var_name = var_disp.get(top_sig["spatial_variable"], top_sig["spatial_variable"])
+                direction = "正相关" if top_sig["pearson_r"] > 0 else "负相关"
+                conclusions.append(
+                    f"空间相关性分析显示在 {top_sig['age_yrBP']:.0f} yr BP 左右，"
+                    f"湿度与{var_name}呈显著{direction}(r={top_sig['pearson_r']:.3f}, "
+                    f"p={top_sig['p_value']:.2e})，指示古环境梯度的空间驱动机制。"
+                )
+
+        if len(conclusions) == 0:
+            conclusions.append("跨区域对比分析结果待进一步深入解读。")
+
+        return conclusions
+
+    def _add_dataframe_table(self, doc, df: pd.DataFrame) -> None:
+        """将DataFrame添加为Word表格"""
+        from docx.shared import Pt
+        from docx.oxml.ns import qn
+
+        df = df.copy()
+        numeric_cols = df.select_dtypes(include=[np.number]).columns
+        df[numeric_cols] = df[numeric_cols].apply(lambda x: x.round(3))
+        df = df.fillna("-")
+
+        n_rows, n_cols = df.shape
+        table = doc.add_table(rows=n_rows + 1, cols=n_cols)
+        table.style = "Light Grid Accent 1"
+
+        for j, col_name in enumerate(df.columns):
+            cell = table.rows[0].cells[j]
+            cell.text = str(col_name)
+            for paragraph in cell.paragraphs:
+                for run in paragraph.runs:
+                    run.bold = True
+                    run.font.size = Pt(9)
+
+        for i in range(n_rows):
+            for j in range(n_cols):
+                cell = table.rows[i + 1].cells[j]
+                cell.text = str(df.iloc[i, j])
+                for paragraph in cell.paragraphs:
+                    for run in paragraph.runs:
+                        run.font.size = Pt(9)
+
+        doc.add_paragraph()

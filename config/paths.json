@@ -10,6 +10,10 @@
     "core_ZK01": {
       "description": "ZK01钻孔泥炭沉积多指标数据",
       "location": "长江中游湿地",
+      "region": "华中",
+      "latitude": 30.5,
+      "longitude": 114.3,
+      "elevation_m": 28,
       "isotope_file": "ZK01_carbon_isotope.csv",
       "plant_remain_file": "ZK01_plant_remains.csv",
       "heavy_metal_file": "ZK01_heavy_metals.csv",
@@ -18,11 +22,81 @@
     "core_ZK02": {
       "description": "ZK02钻孔泥炭沉积多指标数据",
       "location": "江汉平原湿地",
+      "region": "华中",
+      "latitude": 30.2,
+      "longitude": 112.5,
+      "elevation_m": 32,
       "isotope_file": "ZK02_carbon_isotope.csv",
       "plant_remain_file": "ZK02_plant_remains.csv",
       "heavy_metal_file": "ZK02_heavy_metals.csv",
       "chronology_file": "ZK02_chronology.csv"
+    },
+    "core_ZK03": {
+      "description": "ZK03钻孔泥炭沉积多指标数据",
+      "location": "鄱阳湖湿地",
+      "region": "华东",
+      "latitude": 29.1,
+      "longitude": 116.0,
+      "elevation_m": 15,
+      "isotope_file": "ZK03_carbon_isotope.csv",
+      "plant_remain_file": "ZK03_plant_remains.csv",
+      "heavy_metal_file": "ZK03_heavy_metals.csv",
+      "chronology_file": "ZK03_chronology.csv"
+    },
+    "core_ZK04": {
+      "description": "ZK04钻孔泥炭沉积多指标数据",
+      "location": "云贵高原湿地",
+      "region": "西南",
+      "latitude": 26.5,
+      "longitude": 104.8,
+      "elevation_m": 1980,
+      "isotope_file": "ZK04_carbon_isotope.csv",
+      "plant_remain_file": "ZK04_plant_remains.csv",
+      "heavy_metal_file": "ZK04_heavy_metals.csv",
+      "chronology_file": "ZK04_chronology.csv"
+    },
+    "core_ZK05": {
+      "description": "ZK05钻孔泥炭沉积多指标数据",
+      "location": "东北三江平原湿地",
+      "region": "东北",
+      "latitude": 47.3,
+      "longitude": 132.8,
+      "elevation_m": 52,
+      "isotope_file": "ZK05_carbon_isotope.csv",
+      "plant_remain_file": "ZK05_plant_remains.csv",
+      "heavy_metal_file": "ZK05_heavy_metals.csv",
+      "chronology_file": "ZK05_chronology.csv"
+    },
+    "core_ZK06": {
+      "description": "ZK06钻孔泥炭沉积多指标数据",
+      "location": "若尔盖高原湿地",
+      "region": "青藏",
+      "latitude": 33.6,
+      "longitude": 102.9,
+      "elevation_m": 3450,
+      "isotope_file": "ZK06_carbon_isotope.csv",
+      "plant_remain_file": "ZK06_plant_remains.csv",
+      "heavy_metal_file": "ZK06_heavy_metals.csv",
+      "chronology_file": "ZK06_chronology.csv"
     }
   },
-  "default_core": "core_ZK01"
+  "comparison_groups": {
+    "china_wetland_network": {
+      "name": "中国湿地泥炭钻孔网络",
+      "cores": ["core_ZK01", "core_ZK02", "core_ZK03", "core_ZK04", "core_ZK05", "core_ZK06"],
+      "description": "覆盖华中、华东、西南、东北、青藏五大区域的湿地钻孔对比研究"
+    },
+    "central_china": {
+      "name": "华中区域对比",
+      "cores": ["core_ZK01", "core_ZK02"],
+      "description": "长江中游与江汉平原湿地对比"
+    },
+    "east_west_transect": {
+      "name": "东西样带对比",
+      "cores": ["core_ZK02", "core_ZK03", "core_ZK04", "core_ZK06"],
+      "description": "沿30°N纬向的东西湿度梯度对比"
+    }
+  },
+  "default_core": "core_ZK01",
+  "default_comparison_group": "china_wetland_network"
 }

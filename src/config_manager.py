@@ -198,3 +198,101 @@ class ConfigManager:
     def get_report_path(self, filename: str) -> str:
         """获取报告输出文件的完整路径"""
         return os.path.join(self.get_path("report_dir"), filename)
+
+    def list_comparison_groups(self) -> List[str]:
+        """列出所有可用的对比组"""
+        return list(self.paths.get("comparison_groups", {}).keys())
+
+    def get_comparison_group(self, group_id: Optional[str] = None) -> Dict[str, Any]:
+        """
+        获取指定对比组配置
+
+        Args:
+            group_id: 对比组ID，若为None则使用默认对比组
+
+        Returns:
+            对比组配置字典
+        """
+        groups = self.paths.get("comparison_groups", {})
+        if group_id is None:
+            group_id = self.paths.get("default_comparison_group")
+        if group_id not in groups:
+            raise KeyError(f"对比组 '{group_id}' 不存在，可用: {list(groups.keys())}")
+        return groups[group_id]
+
+    def add_comparison_group(self, group_id: str, name: str,
+                           core_ids: List[str], description: str = "",
+                           save: bool = True) -> None:
+        """
+        新增对比组配置
+
+        Args:
+            group_id: 对比组唯一标识
+            name: 对比组名称
+            core_ids: 包含的钻孔ID列表
+            description: 对比组描述
+            save: 是否立即保存到配置文件
+        """
+        if "comparison_groups" not in self._paths_config:
+            self._paths_config["comparison_groups"] = {}
+        for cid in core_ids:
+            if cid not in self._paths_config.get("data_sources", {}):
+                raise ValueError(f"钻孔 '{cid}' 不存在于数据源配置中")
+        self._paths_config["comparison_groups"][group_id] = {
+            "name": name,
+            "cores": core_ids,
+            "description": description
+        }
+        if save:
+            self._save_paths_config()
+
+    def get_core_metadata(self, core_id: str) -> Dict[str, Any]:
+        """
+        获取钻孔完整元数据
+
+        Args:
+            core_id: 钻孔ID
+
+        Returns:
+            包含区域、经纬度、海拔等元数据的字典
+        """
+        source = self.get_data_source(core_id)
+        default_meta = {
+            "region": "未知",
+            "latitude": None,
+            "longitude": None,
+            "elevation_m": None
+        }
+        default_meta.update({k: v for k, v in source.items()
+                            if k in ["region", "latitude", "longitude", "elevation_m", "location", "description"]})
+        default_meta["core_id"] = core_id
+        return default_meta
+
+    def get_all_core_metadata(self) -> pd.DataFrame:
+        """
+        获取所有钻孔元数据表
+
+        Returns:
+            包含所有钻孔元数据的DataFrame
+        """
+        import pandas as pd
+        records = []
+        for core_id in self.list_data_sources():
+            records.append(self.get_core_metadata(core_id))
+        return pd.DataFrame(records)
+
+    def get_cores_by_region(self) -> Dict[str, List[str]]:
+        """
+        按区域分组列出钻孔
+
+        Returns:
+            区域名映射到钻孔ID列表的字典
+        """
+        regions: Dict[str, List[str]] = {}
+        for core_id in self.list_data_sources():
+            meta = self.get_core_metadata(core_id)
+            region = meta.get("region", "未分类")
+            if region not in regions:
+                regions[region] = []
+            regions[region].append(core_id)
+        return regions

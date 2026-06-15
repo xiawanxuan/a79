@@ -5,3 +5,4 @@ plotly>=5.0.0
 python-docx>=0.8.11
 kaleido>=0.2.1
 openpyxl>=3.0.0
+scikit-learn>=1.0.0

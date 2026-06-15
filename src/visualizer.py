@@ -454,3 +454,429 @@ class PeatVisualizer:
                 all_paths["rolling_correlation"] = self.save_figure(fig_roll, f"{prefix}_rolling_correlation")
 
         return all_paths
+
+    def create_cross_region_diff_heatmap(self,
+                                       difference_matrix: pd.DataFrame,
+                                       core_metadata: Optional[pd.DataFrame] = None,
+                                       title: Optional[str] = None,
+                                       metric_label: str = "综合差异") -> go.Figure:
+        """
+        创建跨区域古环境差异热力图
+
+        Args:
+            difference_matrix: 钻孔间差异矩阵
+            core_metadata: 钻孔元数据（用于标注区域信息）
+            title: 图表标题
+            metric_label: 差异度量标签
+
+        Returns:
+            Plotly Figure对象
+        """
+        if title is None:
+            title = "跨区域湿地泥炭钻孔古环境差异热力图"
+
+        display_labels = difference_matrix.index.tolist()
+        if core_metadata is not None and "location" in core_metadata.columns:
+            loc_map = dict(zip(core_metadata["core_id"], core_metadata["location"]))
+            display_labels = [f"{cid}\n({loc_map.get(cid, cid)})" for cid in difference_matrix.index]
+
+        values = difference_matrix.values
+        np.fill_diagonal(values, np.nan)
+
+        max_val = np.nanmax(values) if np.any(~np.isnan(values)) else 1.0
+        if max_val == 0:
+            max_val = 1.0
+
+        fig = go.Figure(data=go.Heatmap(
+            z=values,
+            x=display_labels,
+            y=display_labels,
+            colorscale="Reds",
+            zmid=0,
+            zmin=0,
+            zmax=max_val,
+            text=[[f"{v:.3f}" if not np.isnan(v) else "-" for v in row] for row in values],
+            texttemplate="%{text}",
+            textfont={"size": 10},
+            hovertemplate=(
+                "钻孔X: %{x}<br>"
+                "钻孔Y: %{y}<br>"
+                f"{metric_label}: %{{z:.3f}}<extra></extra>"
+            ),
+            colorbar=dict(
+                title=metric_label,
+                titleside="right"
+            )
+        ))
+
+        if core_metadata is not None and "region" in core_metadata.columns:
+            regions = core_metadata.set_index("core_id")["region"].to_dict()
+            unique_regions = list(set(regions.values()))
+            region_colors = px.colors.qualitative.Set3[:len(unique_regions)]
+            region_color_map = dict(zip(unique_regions, region_colors))
+
+        fig.update_layout(
+            title=dict(text=title, x=0.5, font_size=16),
+            height=550 + 15 * len(display_labels),
+            width=600 + 15 * len(display_labels),
+            template="plotly_white",
+            xaxis=dict(
+                title="钻孔",
+                tickangle=0,
+                side="bottom"
+            ),
+            yaxis=dict(
+                title="钻孔",
+                autorange="reversed"
+            ),
+            font=dict(family="SimSun, Times New Roman, serif", size=11)
+        )
+
+        return fig
+
+    def create_multi_core_timeseries_comparison(self,
+                                              aligned_data: pd.DataFrame,
+                                              proxy: str = "humidity",
+                                              proxy_label: Optional[str] = None,
+                                              age_col: str = "age_yrBP",
+                                              core_filter: Optional[List[str]] = None,
+                                              smooth_window: int = 5,
+                                              title: Optional[str] = None) -> go.Figure:
+        """
+        创建多钻孔联动时序对比图（支持交互式筛选）
+
+        Args:
+            aligned_data: 对齐后的长格式数据
+            proxy: 指标列名
+            proxy_label: 指标显示名称
+            age_col: 年代列名
+            core_filter: 可选的钻孔ID过滤列表
+            smooth_window: 平滑窗口（数据点数）
+            title: 图表标题
+
+        Returns:
+            Plotly Figure对象
+        """
+        proxy_labels_map = {
+            "humidity": "湿度指数",
+            "temperature": "温度距平 (°C)",
+            "delta13C": "δ¹³C同位素 (‰ VPDB)",
+            "plant_index": "植物残体指数 (%)",
+            "metal_pollution": "重金属富集 (ppm)"
+        }
+        if proxy_label is None:
+            proxy_label = proxy_labels_map.get(proxy, proxy)
+
+        if title is None:
+            title = f"多钻孔{proxy_label}时序对比"
+
+        if core_filter:
+            plot_data = aligned_data[aligned_data["core_id"].isin(core_filter)].copy()
+        else:
+            plot_data = aligned_data.copy()
+
+        if proxy not in plot_data.columns:
+            raise ValueError(f"指标列 '{proxy}' 不存在于数据中")
+
+        core_palette = [
+            "#E63946", "#2E86AB", "#3CB371", "#F4A261",
+            "#6A4C93", "#00B4D8", "#FF6B6B", "#2A9D8F"
+        ]
+
+        fig = go.Figure()
+
+        unique_cores = plot_data["core_id"].unique().tolist()
+        for i, core_id in enumerate(unique_cores):
+            core_df = plot_data[plot_data["core_id"] == core_id].sort_values(age_col)
+            if len(core_df) < 2:
+                continue
+
+            meta = self.config.get_core_metadata(core_id)
+            location = meta.get("location", core_id)
+            region = meta.get("region", "")
+            legend_name = f"{location} ({region})" if region else location
+
+            color = core_palette[i % len(core_palette)]
+
+            raw_values = core_df[proxy].values
+            if len(core_df) >= smooth_window * 2:
+                smoothed = pd.Series(raw_values).rolling(
+                    window=smooth_window, center=True, min_periods=1
+                ).mean().values
+            else:
+                smoothed = raw_values
+
+            rgba_color = self._hex_to_rgba(color, 0.12)
+
+            fig.add_trace(go.Scatter(
+                x=core_df[age_col].values,
+                y=smoothed,
+                mode="lines",
+                name=legend_name,
+                line=dict(color=color, width=2.0),
+                legendgroup=core_id,
+                hovertemplate=(
+                    f"钻孔: {location}<br>"
+                    "年代: %{x:.0f} yr BP<br>"
+                    f"{proxy_label}: %{{y:.3f}}<extra></extra>"
+                )
+            ))
+
+            fig.add_trace(go.Scatter(
+                x=core_df[age_col].values,
+                y=raw_values,
+                mode="lines",
+                name=f"{legend_name} (原始)",
+                line=dict(color=color, width=0.8, dash="dot"),
+                opacity=0.4,
+                legendgroup=core_id,
+                showlegend=False,
+                hoverinfo="skip"
+            ))
+
+        self.add_strata_shading(fig, row=1, x_axis_type="age")
+
+        fig.update_layout(
+            title=dict(text=title, x=0.5, font_size=16),
+            xaxis=dict(
+                title="年代 (yr BP)",
+                autorange="reversed"
+            ),
+            yaxis=dict(title=proxy_label),
+            height=500,
+            template="plotly_white",
+            hovermode="x unified",
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="right",
+                x=1,
+                font=dict(size=10)
+            ),
+            font=dict(family="SimSun, Times New Roman, serif", size=11),
+            clickmode="event+select"
+        )
+
+        return fig
+
+    def create_region_proxy_heatmap(self,
+                                   period_statistics: pd.DataFrame,
+                                   proxy: str = "humidity",
+                                   stat: str = "mean",
+                                   title: Optional[str] = None) -> go.Figure:
+        """
+        创建区域-时段指标热力图
+
+        Args:
+            period_statistics: 时段统计数据
+            proxy: 指标名
+            stat: 统计量名 (mean, std, trend)
+            title: 图表标题
+
+        Returns:
+            Plotly Figure对象
+        """
+        proxy_display = {
+            "humidity": "湿度指数",
+            "temperature": "温度距平",
+            "delta13C": "δ¹³C",
+            "metal_pollution": "重金属"
+        }.get(proxy, proxy)
+
+        stat_display = {
+            "mean": "平均值",
+            "std": "标准差",
+            "trend": "趋势斜率"
+        }.get(stat, stat)
+
+        if title is None:
+            title = f"各区域钻孔分时段{proxy_display}{stat_display}对比"
+
+        col_name = f"{proxy}_{stat}"
+        if col_name not in period_statistics.columns:
+            raise ValueError(f"统计列 '{col_name}' 不存在")
+
+        pivot = period_statistics.pivot_table(
+            index="location",
+            columns="period_label",
+            values=col_name,
+            aggfunc="first"
+        )
+
+        sorted_cols = sorted(pivot.columns, key=lambda x: int(x.split("-")[0]))
+        pivot = pivot[sorted_cols]
+
+        colorscale = {
+            "humidity": "Blues",
+            "temperature": "RdYlBu_r",
+            "delta13C": "Greens",
+            "metal_pollution": "Oranges"
+        }.get(proxy, "Viridis")
+
+        fig = px.imshow(
+            pivot.values,
+            labels=dict(x="气候时段", y="钻孔位置", color=f"{proxy_display}"),
+            x=list(pivot.columns),
+            y=list(pivot.index),
+            color_continuous_scale=colorscale,
+            aspect="auto"
+        )
+
+        text_vals = [[f"{v:.2f}" if not np.isnan(v) else "-" for v in row] for row in pivot.values]
+        fig.update_traces(
+            text=text_vals,
+            texttemplate="%{text}",
+            textfont_size=11
+        )
+
+        fig.update_layout(
+            title=dict(text=title, x=0.5, font_size=16),
+            height=420 + 25 * len(pivot.index),
+            width=800,
+            template="plotly_white",
+            font=dict(family="SimSun, Times New Roman, serif", size=11)
+        )
+
+        return fig
+
+    def create_spatial_correlation_plot(self,
+                                      spatial_corr_df: pd.DataFrame,
+                                      title: Optional[str] = None) -> go.Figure:
+        """
+        创建空间相关性时序图
+
+        Args:
+            spatial_corr_df: 空间相关性数据
+            title: 图表标题
+
+        Returns:
+            Plotly Figure对象
+        """
+        if title is None:
+            title = "湿度-海拔/纬度空间相关性演变"
+
+        var_display = {
+            "elevation_m": "海拔 (m)",
+            "latitude": "纬度 (°N)",
+            "longitude": "经度 (°E)"
+        }
+
+        fig = go.Figure()
+
+        colors = ["#2E86AB", "#E63946", "#3CB371"]
+        for i, svar in enumerate(spatial_corr_df["spatial_variable"].unique()):
+            sub = spatial_corr_df[spatial_corr_df["spatial_variable"] == svar].sort_values("age_yrBP")
+            if len(sub) < 2:
+                continue
+
+            color = colors[i % len(colors)]
+            label = var_display.get(svar, svar)
+
+            fig.add_trace(go.Scatter(
+                x=sub["age_yrBP"],
+                y=sub["pearson_r"],
+                mode="lines+markers",
+                name=label,
+                line=dict(color=color, width=2),
+                marker=dict(size=5, color=color),
+                error_y=dict(
+                    type="data",
+                    array=np.where(sub["p_value"] < 0.05, 0.05, 0),
+                    visible=True,
+                    color=color,
+                    thickness=1
+                ),
+                hovertemplate=(
+                    f"空间因子: {label}<br>"
+                    "年代: %{x:.0f} yr BP<br>"
+                    "Pearson r: %{y:.3f}<extra></extra>"
+                )
+            ))
+
+        fig.add_hline(y=0, line_dash="dash", line_color="#888")
+        fig.add_hrect(y0=-0.5, y1=0.5, fillcolor="#F5F5F5", opacity=0.3, layer="below", line_width=0)
+
+        fig.update_layout(
+            title=dict(text=title, x=0.5, font_size=16),
+            xaxis=dict(
+                title="年代 (yr BP)",
+                autorange="reversed"
+            ),
+            yaxis=dict(title="Pearson 相关系数", range=[-1.1, 1.1]),
+            height=420,
+            width=800,
+            template="plotly_white",
+            hovermode="x unified",
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+            font=dict(family="SimSun, Times New Roman, serif", size=11)
+        )
+
+        return fig
+
+    def generate_cross_region_figures(self,
+                                    comparison_results: Dict,
+                                    group_prefix: str = "cross_region") -> Dict[str, Dict]:
+        """
+        批量生成所有跨区域对比图表
+
+        Args:
+            comparison_results: 对比分析结果字典
+            group_prefix: 文件名前缀
+
+        Returns:
+            图表文件路径字典
+        """
+        all_paths = {}
+
+        diff_mats = comparison_results.get("difference_matrices", {})
+        core_meta = comparison_results.get("core_metadata")
+
+        for diff_name, diff_df in diff_mats.items():
+            display_name = {
+                "humidity_mean": "湿度差异",
+                "temperature_mean": "温度差异",
+                "combined": "综合古环境差异"
+            }.get(diff_name, diff_name)
+            fig = self.create_cross_region_diff_heatmap(
+                diff_df, core_meta, metric_label=display_name
+            )
+            all_paths[f"diff_heatmap_{diff_name}"] = self.save_figure(
+                fig, f"{group_prefix}_diff_{diff_name}"
+            )
+
+        aligned = comparison_results.get("aligned_data")
+        if aligned is not None:
+            for proxy in ["humidity", "temperature", "delta13C"]:
+                if proxy in aligned.columns:
+                    try:
+                        fig = self.create_multi_core_timeseries_comparison(aligned, proxy=proxy)
+                        all_paths[f"timeseries_comparison_{proxy}"] = self.save_figure(
+                            fig, f"{group_prefix}_ts_compare_{proxy}"
+                        )
+                    except Exception:
+                        pass
+
+        period_stats = comparison_results.get("period_statistics")
+        if period_stats is not None:
+            for proxy in ["humidity", "temperature", "delta13C"]:
+                if f"{proxy}_mean" in period_stats.columns:
+                    try:
+                        fig = self.create_region_proxy_heatmap(period_stats, proxy=proxy, stat="mean")
+                        all_paths[f"region_period_heatmap_{proxy}"] = self.save_figure(
+                            fig, f"{group_prefix}_region_period_{proxy}"
+                        )
+                    except Exception:
+                        pass
+
+        spatial_corr = comparison_results.get("spatial_correlation")
+        if spatial_corr is not None and len(spatial_corr) > 0:
+            try:
+                fig = self.create_spatial_correlation_plot(spatial_corr)
+                all_paths["spatial_correlation"] = self.save_figure(
+                    fig, f"{group_prefix}_spatial_correlation"
+                )
+            except Exception:
+                pass
+
+        return all_paths
