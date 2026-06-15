@@ -1,0 +1,108 @@
+{
+  "depth_units": "cm",
+  "age_units": "yr BP",
+  "stratigraphic_layers": [
+    {
+      "layer_id": "L1",
+      "name": "表层现代泥炭",
+      "depth_min": 0,
+      "depth_max": 20,
+      "age_min": 0,
+      "age_max": 100,
+      "period": "现代",
+      "decomposition_degree": "低",
+      "description": "表层活泥炭与半分解植物残体混合层"
+    },
+    {
+      "layer_id": "L2",
+      "name": "晚全新世泥炭",
+      "depth_min": 20,
+      "depth_max": 100,
+      "age_min": 100,
+      "age_max": 2000,
+      "period": "晚全新世",
+      "decomposition_degree": "中",
+      "description": "中分解度草本泥炭，含少量木本残体"
+    },
+    {
+      "layer_id": "L3",
+      "name": "中全新世泥炭",
+      "depth_min": 100,
+      "depth_max": 250,
+      "age_min": 2000,
+      "age_max": 6000,
+      "period": "中全新世",
+      "decomposition_degree": "中-高",
+      "description": "高分解度泥炭，气候适宜期沉积"
+    },
+    {
+      "layer_id": "L4",
+      "name": "早全新世泥炭",
+      "depth_min": 250,
+      "depth_max": 400,
+      "age_min": 6000,
+      "age_max": 10000,
+      "period": "早全新世",
+      "decomposition_degree": "高",
+      "description": "深度腐殖化泥炭，全新世早期沉积"
+    },
+    {
+      "layer_id": "L5",
+      "name": "末次冰期沉积",
+      "depth_min": 400,
+      "depth_max": 600,
+      "age_min": 10000,
+      "age_max": 20000,
+      "period": "晚更新世",
+      "decomposition_degree": "极高",
+      "description": "冰缘环境沉积，含粉砂夹层"
+    }
+  ],
+  "proxy_config": {
+    "carbon_isotope": {
+      "column": "delta13C",
+      "units": "per mil (VPDB)",
+      "valid_range": [-35, -15],
+      "description": "有机碳稳定同位素组成"
+    },
+    "humidity_index": {
+      "column": "humidity",
+      "units": "index",
+      "valid_range": [0, 1],
+      "description": "湿度代用指标（植物残体组合转换）"
+    },
+    "temperature_index": {
+      "column": "temperature",
+      "units": "Celsius deviation",
+      "valid_range": [-5, 5],
+      "description": "温度代用指标（转换为现代年均温偏差）"
+    },
+    "plant_remain_index": {
+      "column": "plant_index",
+      "units": "percent",
+      "valid_range": [0, 100],
+      "description": "水生/湿生植物残体百分比"
+    },
+    "heavy_metal_index": {
+      "column": "metal_pollution",
+      "units": "ppm",
+      "valid_range": [0, 500],
+      "description": "重金属富集指数"
+    }
+  },
+  "cleaning_rules": {
+    "outlier_method": "IQR",
+    "iqr_multiplier": 1.5,
+    "zscore_threshold": 3.0,
+    "min_valid_points": 5,
+    "remove_na": true,
+    "instrument_noise_threshold": 0.01
+  },
+  "interpolation_rules": {
+    "method": "linear",
+    "age_step": 10,
+    "extrapolate": false,
+    "min_age": 0,
+    "max_age": 12000
+  }
+}

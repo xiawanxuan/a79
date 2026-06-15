@@ -1,0 +1,28 @@
+{
+  "project_root": "d:/trae3/a79",
+  "raw_data_dir": "d:/trae3/a79/data/raw",
+  "processed_data_dir": "d:/trae3/a79/data/processed",
+  "output_dir": "d:/trae3/a79/output",
+  "figure_dir": "d:/trae3/a79/output/figures",
+  "report_dir": "d:/trae3/a79/output/reports",
+  "config_dir": "d:/trae3/a79/config",
+  "data_sources": {
+    "core_ZK01": {
+      "description": "ZK01钻孔泥炭沉积多指标数据",
+      "location": "长江中游湿地",
+      "isotope_file": "ZK01_carbon_isotope.csv",
+      "plant_remain_file": "ZK01_plant_remains.csv",
+      "heavy_metal_file": "ZK01_heavy_metals.csv",
+      "chronology_file": "ZK01_chronology.csv"
+    },
+    "core_ZK02": {
+      "description": "ZK02钻孔泥炭沉积多指标数据",
+      "location": "江汉平原湿地",
+      "isotope_file": "ZK02_carbon_isotope.csv",
+      "plant_remain_file": "ZK02_plant_remains.csv",
+      "heavy_metal_file": "ZK02_heavy_metals.csv",
+      "chronology_file": "ZK02_chronology.csv"
+    }
+  },
+  "default_core": "core_ZK01"
+}
