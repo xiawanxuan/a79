@@ -103,6 +103,8 @@
     "age_step": 10,
     "extrapolate": false,
     "min_age": 0,
-    "max_age": 12000
+    "max_age": 12000,
+    "min_depth_spacing": 0.5,
+    "min_age_spacing": 5.0
   }
 }

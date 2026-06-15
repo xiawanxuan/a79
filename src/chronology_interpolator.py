@@ -59,6 +59,30 @@ class ChronologyInterpolator:
                 raise ValueError(f"年代学数据缺少必需列: '{col}'")
 
         df = df.sort_values("depth_cm").reset_index(drop=True)
+
+        df = df.drop_duplicates(subset=["depth_cm"], keep="first").reset_index(drop=True)
+        df = df.drop_duplicates(subset=["age_yrBP"], keep="first").reset_index(drop=True)
+
+        if len(df) >= 2:
+            depth_diffs = df["depth_cm"].diff().dropna()
+            age_diffs = df["age_yrBP"].diff().dropna()
+            min_depth_spacing = self.interp_rules.get("min_depth_spacing", 0.5)
+            min_age_spacing = self.interp_rules.get("min_age_spacing", 5.0)
+
+            valid_mask = [True]
+            for i in range(1, len(df)):
+                depth_gap = df["depth_cm"].iloc[i] - df["depth_cm"].iloc[i-1]
+                age_gap = df["age_yrBP"].iloc[i] - df["age_yrBP"].iloc[i-1]
+                if depth_gap >= min_depth_spacing and age_gap >= min_age_spacing:
+                    valid_mask.append(True)
+                else:
+                    valid_mask.append(False)
+
+            df = df[valid_mask].reset_index(drop=True)
+
+        if len(df) < 2:
+            raise ValueError("去重后有效年代学控制点不足（至少需要2个）")
+
         self._chronology_df = df
         self._build_interpolation_functions()
         return df
@@ -132,6 +156,38 @@ class ChronologyInterpolator:
         result = df.copy()
         result[age_col] = result[depth_col].apply(self.depth_to_age)
         result = result.dropna(subset=[age_col])
+
+        result[age_col] = result[age_col].round(0)
+
+        min_age_spacing = self.interp_rules.get("min_age_spacing", 5.0)
+
+        if len(result) > 1:
+            result = result.sort_values(age_col).reset_index(drop=True)
+
+            numeric_cols = result.select_dtypes(include=[np.number]).columns.tolist()
+            agg_dict = {}
+            for col in numeric_cols:
+                if col != age_col and col != depth_col:
+                    agg_dict[col] = "mean"
+            agg_dict[depth_col] = "mean"
+
+            if agg_dict:
+                result = result.groupby(age_col, as_index=False).agg(agg_dict)
+
+            result = result.sort_values(age_col).reset_index(drop=True)
+
+            valid_mask = [True]
+            last_age = result[age_col].iloc[0]
+            for i in range(1, len(result)):
+                current_age = result[age_col].iloc[i]
+                if current_age - last_age >= min_age_spacing:
+                    valid_mask.append(True)
+                    last_age = current_age
+                else:
+                    valid_mask.append(False)
+
+            result = result[valid_mask].reset_index(drop=True)
+
         result = result.sort_values(age_col).reset_index(drop=True)
         return result
 
@@ -162,23 +218,58 @@ class ChronologyInterpolator:
         if max_age is None:
             max_age = self.interp_rules.get("max_age", 12000)
 
-        uniform_ages = np.arange(min_age, max_age + age_step, age_step)
+        input_df = df.copy()
+        input_df[age_col] = input_df[age_col].round(0)
+        input_df = input_df.drop_duplicates(subset=[age_col], keep="first").reset_index(drop=True)
+        input_df = input_df.sort_values(age_col).reset_index(drop=True)
+
+        min_age_spacing = self.interp_rules.get("min_age_spacing", 5.0)
+        if len(input_df) > 1:
+            valid_mask = [True]
+            last_age = input_df[age_col].iloc[0]
+            for i in range(1, len(input_df)):
+                current_age = input_df[age_col].iloc[i]
+                if current_age - last_age >= min_age_spacing:
+                    valid_mask.append(True)
+                    last_age = current_age
+                else:
+                    valid_mask.append(False)
+            input_df = input_df[valid_mask].reset_index(drop=True)
+
+        data_min_age = input_df[age_col].min() if len(input_df) > 0 else min_age
+        data_max_age = input_df[age_col].max() if len(input_df) > 0 else max_age
+
+        effective_min_age = max(min_age, data_min_age)
+        effective_max_age = min(max_age, data_max_age)
+
+        if effective_max_age - effective_min_age < age_step:
+            raise ValueError(
+                f"有效插值区间过小（{effective_min_age:.0f} - {effective_max_age:.0f} yr BP），"
+                f"小于时间步长 {age_step} 年"
+            )
+
+        uniform_ages = np.arange(effective_min_age, effective_max_age + age_step, age_step)
 
         result_data = {age_col: uniform_ages}
 
         for value_col in value_cols:
-            if value_col not in df.columns:
+            if value_col not in input_df.columns:
                 raise ValueError(f"数据中缺少列 '{value_col}'")
 
-            valid_data = df.dropna(subset=[age_col, value_col])
+            valid_data = input_df.dropna(subset=[age_col, value_col])
             valid_data = valid_data.sort_values(age_col)
 
             if len(valid_data) < 2:
-                result_data[value_col] = np.nan
+                result_data[value_col] = [np.nan] * len(uniform_ages)
                 continue
 
             ages = valid_data[age_col].values
             values = valid_data[value_col].values
+
+            col_min_age = ages[0]
+            col_max_age = ages[-1]
+            col_effective_min = max(effective_min_age, col_min_age)
+            col_effective_max = min(effective_max_age, col_max_age)
 
             extrapolate = self.interp_rules.get("extrapolate", False)
             fill_value = (values[0], values[-1]) if extrapolate else np.nan
@@ -190,7 +281,13 @@ class ChronologyInterpolator:
                 fill_value=fill_value
             )
 
-            result_data[value_col] = interp_func(uniform_ages)
+            interpolated = interp_func(uniform_ages)
+
+            if not extrapolate:
+                out_of_range_mask = (uniform_ages < col_min_age) | (uniform_ages > col_max_age)
+                interpolated[out_of_range_mask] = np.nan
+
+            result_data[value_col] = interpolated
 
         result_df = pd.DataFrame(result_data)
 
